@@ -1,9 +1,25 @@
-# Azure Banking Lakehouse Medallion Architecture
+# Enterprise Banking Lakehouse Platform (Medallion Architecture)
 
-An enterprise-grade, metadata-driven banking data platform built on Azure Data Lake Storage Gen2, Azure Data Factory, and Azure Databricks Unity Catalog.
+An end-to-end, metadata-driven banking lakehouse engineered using **Azure Data Factory (ADF)**, **Azure Data Lake Storage Gen2 (ADLS Gen2)**, and **Azure Databricks Unity Catalog**.
 
-## Architecture Highlights
-- **Bronze Layer**: Raw ingestion from SQL Server to Delta Lake via ADF and parameterized notebooks.
-- **Silver Layer**: Data cleansing, schema validation, quarantine routing for invalid records, and SCD Type 2 dimension versioning.
-- **Gold Layer**: Aggregated business data marts (`customer_360`, `loan_summary`, `transaction_summary`).
-- **Metadata & Audit Framework**: Dynamic control table driven watermarking with run-level logging.
+---
+
+## 🏛️ Architecture Overview
+
+```text
+[On-Premises SQL Server]
+       │
+       ▼ (Self-Hosted IR / ADF Dynamic Copy Activity)
+[ADLS Gen2 Landing (Parquet)]
+       │
+       ▼ (Databricks Bronze Engine: Parameterized Ingestion & Telemetry)
+[Bronze Delta Tables] (Raw Append-Only + Metadata Lineage Columns)
+       │
+       ▼ (Databricks Silver Engine: Validation, Regex Quarantine & SCD Type 2)
+[Silver Delta Tables] (Cleansed Dimensional & Fact Entities + Quarantine Log)
+       │
+       ▼ (Databricks Gold Engine: Curated Data Mart Aggregations)
+[Gold Delta Tables] (Customer 360, Loan Risk Exposure, Branch Transaction Velocity)
+       │
+       ▼
+[Databricks SQL / AI/BI Dashboards] (Executive Presentation Layer)
