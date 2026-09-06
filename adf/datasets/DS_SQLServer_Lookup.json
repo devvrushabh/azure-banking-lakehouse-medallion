@@ -1,0 +1,13 @@
+{
+    "name": "DS_SQLServer_Lookup",
+    "properties": {
+        "linkedServiceName": {
+            "referenceName": "LS_SQLServer_OnPrem",
+            "type": "LinkedServiceReference"
+        },
+        "annotations": [],
+        "type": "SqlServerTable",
+        "schema": []
+    },
+    "type": "Microsoft.DataFactory/factories/datasets"
+}

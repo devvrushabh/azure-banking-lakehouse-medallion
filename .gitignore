@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets and environment configs
+*.env
+*.pem
+*.key
+*credentials*
+*secret*
+
+# IDE and Python artifacts
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
