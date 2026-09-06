@@ -2,6 +2,8 @@
 
 An end-to-end, metadata-driven banking lakehouse engineered using **Azure Data Factory (ADF)**, **Azure Data Lake Storage Gen2 (ADLS Gen2)**, and **Azure Databricks Unity Catalog**.
 
+![Executive Banking Dashboard](assets/executive_banking_dashboard.png)
+
 ---
 
 ## 🏛️ Architecture Overview
