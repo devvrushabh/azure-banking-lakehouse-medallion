@@ -1,0 +1,25 @@
+{
+	"name": "Trig_Banking_Daily_Ingestion",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Started",
+		"pipelines": [
+			{
+				"pipelineReference": {
+					"referenceName": "Banking_Master_Orchestrator",
+					"type": "PipelineReference"
+				}
+			}
+		],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Day",
+				"interval": 1,
+				"startTime": "2026-09-05T23:53:00",
+				"endTime": "2026-09-25T23:53:00",
+				"timeZone": "India Standard Time"
+			}
+		}
+	}
+}

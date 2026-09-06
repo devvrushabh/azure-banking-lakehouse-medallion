@@ -1,0 +1,393 @@
+{
+	"name": "Banking_Incremenal_Pipeline",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "SqlServerSource",
+						"sqlReaderQuery": "SELECT * FROM control.pipeline_config WHERE status = 'Active' AND is_incremental = '1'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_SQLServer_Lookup",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup",
+						"dependencyConditions": [
+							"Completed"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Pipeline_start_time",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "Pipeline_start_time",
+								"value": {
+									"value": "@utcnow('yyyy-MM-dd HH:mm:ss')",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Copy data1",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "Pipeline_start_time",
+									"dependencyConditions": [
+										"Completed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@concat(\n    item().source_query, \n    ' WHERE ', item().delta_column_1, ' > ''', item().last_pipeline_run_date, ''''\n)",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_SQLServer_Dynamic",
+									"type": "DatasetReference",
+									"parameters": {
+										"SchemaName": {
+											"value": "@item().source_schema_name",
+											"type": "Expression"
+										},
+										"TableName": {
+											"value": "@item().source_table_name",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_ADLS_Parquet_Sink",
+									"type": "DatasetReference",
+									"parameters": {
+										"Container": "lakehouse",
+										"Directory": "@concat('landing/', item().adls_target_path)  ",
+										"FileName": "@concat(item().source_table_name, '.parquet')  "
+									}
+								}
+							]
+						},
+						{
+							"name": "Data Ingestion",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Copy data1",
+									"dependencyConditions": [
+										"Completed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Data_Ingestion_Notebooks/DataLoad_Notebook  ",
+								"baseParameters": {
+									"source_table": {
+										"value": "@item().source_table_name  ",
+										"type": "Expression"
+									},
+									"target_catalog": {
+										"value": "@item().target_catalog_name  ",
+										"type": "Expression"
+									},
+									"target_schema": {
+										"value": "@item().target_schema_name  ",
+										"type": "Expression"
+									},
+									"target_table": {
+										"value": "@item().target_table_name  ",
+										"type": "Expression"
+									},
+									"adls_path": {
+										"value": "@concat('abfss://lakehouse@adlsbankingpoc2026.dfs.core.windows.net/landing/', item().adls_target_path)",
+										"type": "Expression"
+									},
+									"load_type": {
+										"value": "@item().load_type",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_AzureDatabricks",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Notebook_on_success",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Data Ingestion",
+									"dependencyConditions": [
+										"Completed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Success",
+								"baseParameters": {
+									"pipeline_name": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"run_id": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"trigger_type": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"trigger_name": {
+										"value": "@pipeline().TriggerName",
+										"type": "Expression"
+									},
+									"source_schema_name": {
+										"value": "@item().source_schema_name",
+										"type": "Expression"
+									},
+									"source_table_name": {
+										"value": "@item().source_table_name",
+										"type": "Expression"
+									},
+									"target_catalog_name": {
+										"value": "@item().target_catalog_name  ",
+										"type": "Expression"
+									},
+									"target_schema_name": {
+										"value": "@item().target_schema_name",
+										"type": "Expression"
+									},
+									"target_table_name": {
+										"value": "@item().target_table_name",
+										"type": "Expression"
+									},
+									"copy_duration": {
+										"value": "@string(activity('Copy data1').output.copyDuration)",
+										"type": "Expression"
+									},
+									"pipeline_start_time": {
+										"value": "@variables('Pipeline_start_time')",
+										"type": "Expression"
+									},
+									"rows_read": {
+										"value": "@string(activity('Copy data1').output.rowsRead)",
+										"type": "Expression"
+									},
+									"rows_copied": {
+										"value": "@string(activity('Copy data1').output.rowsCopied)",
+										"type": "Expression"
+									},
+									"data_read": {
+										"value": "@string(activity('Copy data1').output.dataRead)",
+										"type": "Expression"
+									},
+									"data_written": {
+										"value": "@string(activity('Copy data1').output.dataWritten)",
+										"type": "Expression"
+									},
+									"load_type": {
+										"value": "@item().load_type",
+										"type": "Expression"
+									},
+									"adls_target_path": {
+										"value": "@item().adls_target_path",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_AzureDatabricks",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Notebook_on_fail",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Copy data1",
+									"dependencyConditions": [
+										"Failed"
+									]
+								},
+								{
+									"activity": "Data Ingestion",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Fail",
+								"baseParameters": {
+									"pipeline_name": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"run_id": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"trigger_type": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"trigger_name": {
+										"value": "@pipeline().TriggerName",
+										"type": "Expression"
+									},
+									"source_schema_name": {
+										"value": "@item().source_schema_name",
+										"type": "Expression"
+									},
+									"source_table_name": {
+										"value": "@item().source_table_name",
+										"type": "Expression"
+									},
+									"target_catalog_name": {
+										"value": "@item().target_catalog_name",
+										"type": "Expression"
+									},
+									"target_schema_name": {
+										"value": "@item().target_schema_name",
+										"type": "Expression"
+									},
+									"target_table_name": {
+										"value": "@item().target_table_name",
+										"type": "Expression"
+									},
+									"pipeline_start_time": {
+										"value": "@variables('Pipeline_start_time')",
+										"type": "Expression"
+									},
+									"error_details": {
+										"value": "@activity('Copy data1').error.message",
+										"type": "Expression"
+									},
+									"load_type": {
+										"value": "@item().load_type",
+										"type": "Expression"
+									},
+									"adls_target_path": {
+										"value": "@item().adls_target_path",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_AzureDatabricks",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			}
+		],
+		"variables": {
+			"Pipeline_start_time": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2026-09-05T20:44:17Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

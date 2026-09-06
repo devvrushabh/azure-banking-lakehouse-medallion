@@ -1,0 +1,15 @@
+{
+	"name": "adfmigrationpocbanking",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "centralindia",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "fb3286d4-71f6-4c8f-b23f-9f4df338b839",
+		"tenantId": "e7f873bc-3c6b-4d33-afed-df157809dc33"
+	}
+}

@@ -1,0 +1,7 @@
+{
+	"name": "SHIR-Banking-OnPrem",
+	"properties": {
+		"type": "SelfHosted",
+		"description": "SHIR gateway to access local Banking SQL Server"
+	}
+}
