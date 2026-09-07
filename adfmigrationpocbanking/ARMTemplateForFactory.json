@@ -1,0 +1,1379 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "adfmigrationpocbanking"
+		},
+		"LS_ADLS_Gen2_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'LS_ADLS_Gen2'"
+		},
+		"LS_AzureDatabricks_accessToken": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accessToken' of 'LS_AzureDatabricks'"
+		},
+		"LS_SQLServer_OnPrem_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'LS_SQLServer_OnPrem'"
+		},
+		"LS_ADLS_Gen2_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://adlsbankingpoc2026.dfs.core.windows.net/"
+		},
+		"LS_AzureDatabricks_properties_typeProperties_existingClusterId": {
+			"type": "string",
+			"defaultValue": "0904-221259-whpvru6z"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "VRUSHABH\\SQLEXPRESS"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "Banking"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "adf_user"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/Banking_Full_Load_Pipeline')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Lookup",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "SqlServerSource",
+								"sqlReaderQuery": "SELECT * FROM dbo.pipeline_config WHERE status = 'Active' AND load_type = 'Full'",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "DS_SQLServer_Lookup",
+								"type": "DatasetReference",
+								"parameters": {}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "ForEach1",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Lookup",
+								"dependencyConditions": [
+									"Completed"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Lookup').output.value",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "Pipeline_start_time",
+									"type": "SetVariable",
+									"dependsOn": [],
+									"policy": {
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"variableName": "Pipeline_start_time",
+										"value": {
+											"value": "@utcnow('yyyy-MM-dd HH:mm:ss')",
+											"type": "Expression"
+										}
+									}
+								},
+								{
+									"name": "Copy data1",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "Pipeline_start_time",
+											"dependencyConditions": [
+												"Completed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "SqlServerSource",
+											"sqlReaderQuery": {
+												"value": "@item().source_query",
+												"type": "Expression"
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"sink": {
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobFSWriteSettings"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "DS_SQLServer_Dynamic",
+											"type": "DatasetReference",
+											"parameters": {
+												"SchemaName": {
+													"value": "@item().source_schema_name",
+													"type": "Expression"
+												},
+												"TableName": {
+													"value": "@item().source_table_name",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "DS_ADLS_Parquet_Sink",
+											"type": "DatasetReference",
+											"parameters": {
+												"Container": "lakehouse",
+												"Directory": "@concat('landing/', item().adls_target_path)  ",
+												"FileName": "@concat(item().source_table_name, '.parquet')  "
+											}
+										}
+									]
+								},
+								{
+									"name": "Data Ingestion",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Copy data1",
+											"dependencyConditions": [
+												"Completed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/DataLoad_Notebook  ",
+										"baseParameters": {
+											"source_table": {
+												"value": "@item().source_table_name  ",
+												"type": "Expression"
+											},
+											"target_catalog": {
+												"value": "@item().target_catalog_name  ",
+												"type": "Expression"
+											},
+											"target_schema": {
+												"value": "@item().target_schema_name  ",
+												"type": "Expression"
+											},
+											"target_table": {
+												"value": "@item().target_table_name  ",
+												"type": "Expression"
+											},
+											"adls_path": {
+												"value": "@concat('abfss://lakehouse@adlsbankingpoc2026.dfs.core.windows.net/landing/', item().adls_target_path)",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								},
+								{
+									"name": "Notebook_on_success",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Data Ingestion",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Success",
+										"baseParameters": {
+											"pipeline_name": {
+												"value": "@pipeline().Pipeline",
+												"type": "Expression"
+											},
+											"run_id": {
+												"value": "@pipeline().RunId",
+												"type": "Expression"
+											},
+											"trigger_type": {
+												"value": "@pipeline().TriggerType",
+												"type": "Expression"
+											},
+											"trigger_name": {
+												"value": "@pipeline().TriggerName",
+												"type": "Expression"
+											},
+											"source_schema_name": {
+												"value": "@item().source_schema_name",
+												"type": "Expression"
+											},
+											"source_table_name": {
+												"value": "@item().source_table_name",
+												"type": "Expression"
+											},
+											"target_catalog_name": {
+												"value": "@item().target_catalog_name  ",
+												"type": "Expression"
+											},
+											"target_schema_name": {
+												"value": "@item().target_schema_name",
+												"type": "Expression"
+											},
+											"target_table_name": {
+												"value": "@item().target_table_name",
+												"type": "Expression"
+											},
+											"copy_duration": {
+												"value": "@string(activity('Copy data1').output.copyDuration)",
+												"type": "Expression"
+											},
+											"pipeline_start_time": {
+												"value": "@variables('Pipeline_start_time')",
+												"type": "Expression"
+											},
+											"rows_read": {
+												"value": "@string(activity('Copy data1').output.rowsRead)",
+												"type": "Expression"
+											},
+											"rows_copied": {
+												"value": "@string(activity('Copy data1').output.rowsCopied)",
+												"type": "Expression"
+											},
+											"data_read": {
+												"value": "@string(activity('Copy data1').output.dataRead)",
+												"type": "Expression"
+											},
+											"data_written": {
+												"value": "@string(activity('Copy data1').output.dataWritten)",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											},
+											"adls_target_path": {
+												"value": "@item().adls_target_path",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								},
+								{
+									"name": "Notebook_on_fail",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Copy data1",
+											"dependencyConditions": [
+												"Failed"
+											]
+										},
+										{
+											"activity": "Data Ingestion",
+											"dependencyConditions": [
+												"Failed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Fail",
+										"baseParameters": {
+											"pipeline_name": {
+												"value": "@pipeline().Pipeline",
+												"type": "Expression"
+											},
+											"run_id": {
+												"value": "@pipeline().RunId",
+												"type": "Expression"
+											},
+											"trigger_type": {
+												"value": "@pipeline().TriggerType",
+												"type": "Expression"
+											},
+											"trigger_name": {
+												"value": "@pipeline().TriggerName",
+												"type": "Expression"
+											},
+											"source_schema_name": {
+												"value": "@item().source_schema_name",
+												"type": "Expression"
+											},
+											"source_table_name": {
+												"value": "@item().source_table_name",
+												"type": "Expression"
+											},
+											"target_catalog_name": {
+												"value": "@item().target_catalog_name",
+												"type": "Expression"
+											},
+											"target_schema_name": {
+												"value": "@item().target_schema_name",
+												"type": "Expression"
+											},
+											"target_table_name": {
+												"value": "@item().target_table_name",
+												"type": "Expression"
+											},
+											"pipeline_start_time": {
+												"value": "@variables('Pipeline_start_time')",
+												"type": "Expression"
+											},
+											"error_details": {
+												"value": "@activity('Copy data1').error.message",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											},
+											"adls_target_path": {
+												"value": "@item().adls_target_path",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"Pipeline_start_time": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-09-05T20:44:17Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/DS_SQLServer_Lookup')]",
+				"[concat(variables('factoryId'), '/datasets/DS_SQLServer_Dynamic')]",
+				"[concat(variables('factoryId'), '/datasets/DS_ADLS_Parquet_Sink')]",
+				"[concat(variables('factoryId'), '/linkedServices/LS_AzureDatabricks')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Banking_Incremenal_Pipeline')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Lookup",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "SqlServerSource",
+								"sqlReaderQuery": "SELECT * FROM control.pipeline_config WHERE status = 'Active' AND is_incremental = '1'",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "DS_SQLServer_Lookup",
+								"type": "DatasetReference",
+								"parameters": {}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "ForEach1",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Lookup",
+								"dependencyConditions": [
+									"Completed"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Lookup').output.value",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "Pipeline_start_time",
+									"type": "SetVariable",
+									"dependsOn": [],
+									"policy": {
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"variableName": "Pipeline_start_time",
+										"value": {
+											"value": "@utcnow('yyyy-MM-dd HH:mm:ss')",
+											"type": "Expression"
+										}
+									}
+								},
+								{
+									"name": "Copy data1",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "Pipeline_start_time",
+											"dependencyConditions": [
+												"Completed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "SqlServerSource",
+											"sqlReaderQuery": {
+												"value": "@concat(\n    item().source_query, \n    ' WHERE ', item().delta_column_1, ' > ''', item().last_pipeline_run_date, ''''\n)",
+												"type": "Expression"
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"sink": {
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobFSWriteSettings"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "DS_SQLServer_Dynamic",
+											"type": "DatasetReference",
+											"parameters": {
+												"SchemaName": {
+													"value": "@item().source_schema_name",
+													"type": "Expression"
+												},
+												"TableName": {
+													"value": "@item().source_table_name",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "DS_ADLS_Parquet_Sink",
+											"type": "DatasetReference",
+											"parameters": {
+												"Container": "lakehouse",
+												"Directory": "@concat('landing/', item().adls_target_path)  ",
+												"FileName": "@concat(item().source_table_name, '.parquet')  "
+											}
+										}
+									]
+								},
+								{
+									"name": "Data Ingestion",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Copy data1",
+											"dependencyConditions": [
+												"Completed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/DataLoad_Notebook  ",
+										"baseParameters": {
+											"source_table": {
+												"value": "@item().source_table_name  ",
+												"type": "Expression"
+											},
+											"target_catalog": {
+												"value": "@item().target_catalog_name  ",
+												"type": "Expression"
+											},
+											"target_schema": {
+												"value": "@item().target_schema_name  ",
+												"type": "Expression"
+											},
+											"target_table": {
+												"value": "@item().target_table_name  ",
+												"type": "Expression"
+											},
+											"adls_path": {
+												"value": "@concat('abfss://lakehouse@adlsbankingpoc2026.dfs.core.windows.net/landing/', item().adls_target_path)",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								},
+								{
+									"name": "Notebook_on_success",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Data Ingestion",
+											"dependencyConditions": [
+												"Completed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Success",
+										"baseParameters": {
+											"pipeline_name": {
+												"value": "@pipeline().Pipeline",
+												"type": "Expression"
+											},
+											"run_id": {
+												"value": "@pipeline().RunId",
+												"type": "Expression"
+											},
+											"trigger_type": {
+												"value": "@pipeline().TriggerType",
+												"type": "Expression"
+											},
+											"trigger_name": {
+												"value": "@pipeline().TriggerName",
+												"type": "Expression"
+											},
+											"source_schema_name": {
+												"value": "@item().source_schema_name",
+												"type": "Expression"
+											},
+											"source_table_name": {
+												"value": "@item().source_table_name",
+												"type": "Expression"
+											},
+											"target_catalog_name": {
+												"value": "@item().target_catalog_name  ",
+												"type": "Expression"
+											},
+											"target_schema_name": {
+												"value": "@item().target_schema_name",
+												"type": "Expression"
+											},
+											"target_table_name": {
+												"value": "@item().target_table_name",
+												"type": "Expression"
+											},
+											"copy_duration": {
+												"value": "@string(activity('Copy data1').output.copyDuration)",
+												"type": "Expression"
+											},
+											"pipeline_start_time": {
+												"value": "@variables('Pipeline_start_time')",
+												"type": "Expression"
+											},
+											"rows_read": {
+												"value": "@string(activity('Copy data1').output.rowsRead)",
+												"type": "Expression"
+											},
+											"rows_copied": {
+												"value": "@string(activity('Copy data1').output.rowsCopied)",
+												"type": "Expression"
+											},
+											"data_read": {
+												"value": "@string(activity('Copy data1').output.dataRead)",
+												"type": "Expression"
+											},
+											"data_written": {
+												"value": "@string(activity('Copy data1').output.dataWritten)",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											},
+											"adls_target_path": {
+												"value": "@item().adls_target_path",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								},
+								{
+									"name": "Notebook_on_fail",
+									"type": "DatabricksNotebook",
+									"dependsOn": [
+										{
+											"activity": "Copy data1",
+											"dependencyConditions": [
+												"Failed"
+											]
+										},
+										{
+											"activity": "Data Ingestion",
+											"dependencyConditions": [
+												"Failed"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebookPath": "/Data_Ingestion_Notebooks/Nb_Audit_Fail",
+										"baseParameters": {
+											"pipeline_name": {
+												"value": "@pipeline().Pipeline",
+												"type": "Expression"
+											},
+											"run_id": {
+												"value": "@pipeline().RunId",
+												"type": "Expression"
+											},
+											"trigger_type": {
+												"value": "@pipeline().TriggerType",
+												"type": "Expression"
+											},
+											"trigger_name": {
+												"value": "@pipeline().TriggerName",
+												"type": "Expression"
+											},
+											"source_schema_name": {
+												"value": "@item().source_schema_name",
+												"type": "Expression"
+											},
+											"source_table_name": {
+												"value": "@item().source_table_name",
+												"type": "Expression"
+											},
+											"target_catalog_name": {
+												"value": "@item().target_catalog_name",
+												"type": "Expression"
+											},
+											"target_schema_name": {
+												"value": "@item().target_schema_name",
+												"type": "Expression"
+											},
+											"target_table_name": {
+												"value": "@item().target_table_name",
+												"type": "Expression"
+											},
+											"pipeline_start_time": {
+												"value": "@variables('Pipeline_start_time')",
+												"type": "Expression"
+											},
+											"error_details": {
+												"value": "@activity('Copy data1').error.message",
+												"type": "Expression"
+											},
+											"load_type": {
+												"value": "@item().load_type",
+												"type": "Expression"
+											},
+											"adls_target_path": {
+												"value": "@item().adls_target_path",
+												"type": "Expression"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "LS_AzureDatabricks",
+										"type": "LinkedServiceReference"
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"Pipeline_start_time": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-09-05T20:44:17Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/DS_SQLServer_Lookup')]",
+				"[concat(variables('factoryId'), '/datasets/DS_SQLServer_Dynamic')]",
+				"[concat(variables('factoryId'), '/datasets/DS_ADLS_Parquet_Sink')]",
+				"[concat(variables('factoryId'), '/linkedServices/LS_AzureDatabricks')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Banking_Master_Orchestrator')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "End-to-end master orchestrator coordinating Bronze ingestion, Silver cleansing/SCD2, and Gold aggregations.",
+				"activities": [
+					{
+						"name": "Check_Run_Type",
+						"type": "IfCondition",
+						"dependsOn": [],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@equals(pipeline().parameters.RunType, 'Full')",
+								"type": "Expression"
+							},
+							"ifFalseActivities": [
+								{
+									"name": "Exec_Bronze_Incremental_Load",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"policy": {
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "Banking_Incremenal_Pipeline",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {}
+									}
+								}
+							],
+							"ifTrueActivities": [
+								{
+									"name": "Exec_Bronze_Full_Load",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"policy": {
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "Banking_Full_Load_Pipeline",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {}
+									}
+								}
+							]
+						}
+					},
+					{
+						"name": "Execute_Silver_Pipeline",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "Check_Run_Type",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Silver_Pipeline",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					},
+					{
+						"name": "Execute_Gold_Pipeline",
+						"type": "ExecutePipeline",
+						"dependsOn": [
+							{
+								"activity": "Execute_Silver_Pipeline",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"pipeline": {
+								"referenceName": "Gold_Pipeline",
+								"type": "PipelineReference"
+							},
+							"waitOnCompletion": true,
+							"parameters": {}
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"parameters": {
+					"RunType": {
+						"type": "string",
+						"defaultValue": "Incremental"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-09-05T23:44:43Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/Silver_Pipeline')]",
+				"[concat(variables('factoryId'), '/pipelines/Gold_Pipeline')]",
+				"[concat(variables('factoryId'), '/pipelines/Banking_Incremenal_Pipeline')]",
+				"[concat(variables('factoryId'), '/pipelines/Banking_Full_Load_Pipeline')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Gold_Pipeline')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Customer_360",
+						"type": "DatabricksNotebook",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/04_Gold/Customer_360"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Loan_Summary",
+						"type": "DatabricksNotebook",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/04_Gold/Loan_Summary"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Transaction_Summary",
+						"type": "DatabricksNotebook",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/04_Gold/Transaction_Summary"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					}
+				],
+				"concurrency": 3,
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-09-05T20:44:17Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_AzureDatabricks')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Silver_Pipeline')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Customer_Account_Silver",
+						"type": "DatabricksNotebook",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/03_Silver/Customer_Account_Silver"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Loan_Branch_Silver",
+						"type": "DatabricksNotebook",
+						"dependsOn": [
+							{
+								"activity": "Customer_Account_Silver",
+								"dependencyConditions": [
+									"Completed"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/03_Silver/Loan_Branch_Silver"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					},
+					{
+						"name": "Transaction_Silver",
+						"type": "DatabricksNotebook",
+						"dependsOn": [
+							{
+								"activity": "Loan_Branch_Silver",
+								"dependencyConditions": [
+									"Completed"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebookPath": "/Banking_Migration/03_Silver/Transaction_Silver"
+						},
+						"linkedServiceName": {
+							"referenceName": "LS_AzureDatabricks",
+							"type": "LinkedServiceReference"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-09-05T20:44:17Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_AzureDatabricks')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/DS_ADLS_Parquet_Sink')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "LS_ADLS_Gen2",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"Container": {
+						"type": "string"
+					},
+					"Directory": {
+						"type": "string"
+					},
+					"FileName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@dataset().FileName",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().Directory",
+							"type": "Expression"
+						},
+						"fileSystem": {
+							"value": "@dataset().Container",
+							"type": "Expression"
+						}
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_ADLS_Gen2')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/DS_Control_Config')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "LS_ADLS_Gen2",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": "managed/control/pipeline_config",
+						"fileSystem": "lakehouse"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_ADLS_Gen2')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/DS_SQLServer_Dynamic')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "LS_SQLServer_OnPrem",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"SchemaName": {
+						"type": "string"
+					},
+					"TableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "SqlServerTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": {
+						"value": "@dataset().SchemaName",
+						"type": "Expression"
+					},
+					"table": {
+						"value": "@dataset().TableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_SQLServer_OnPrem')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/DS_SQLServer_Lookup')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "LS_SQLServer_OnPrem",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "SqlServerTable",
+				"schema": [],
+				"typeProperties": {}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/LS_SQLServer_OnPrem')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LS_ADLS_Gen2')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('LS_ADLS_Gen2_properties_typeProperties_url')]",
+					"accountKey": {
+						"type": "SecureString",
+						"value": "[parameters('LS_ADLS_Gen2_accountKey')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LS_AzureDatabricks')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureDatabricks",
+				"typeProperties": {
+					"domain": "https://adb-7405618363672499.19.azuredatabricks.net",
+					"accessToken": {
+						"type": "SecureString",
+						"value": "[parameters('LS_AzureDatabricks_accessToken')]"
+					},
+					"existingClusterId": "[parameters('LS_AzureDatabricks_properties_typeProperties_existingClusterId')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/LS_SQLServer_OnPrem')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "SqlServer",
+				"typeProperties": {
+					"server": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_server')]",
+					"database": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_database')]",
+					"encrypt": "optional",
+					"trustServerCertificate": true,
+					"authenticationType": "SQL",
+					"userName": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_userName')]",
+					"password": {
+						"type": "SecureString",
+						"value": "[parameters('LS_SQLServer_OnPrem_password')]"
+					}
+				},
+				"connectVia": {
+					"referenceName": "SHIR-Banking-OnPrem",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/integrationRuntimes/SHIR-Banking-OnPrem')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/Trig_Banking_Daily_Ingestion')]",
+			"type": "Microsoft.DataFactory/factories/triggers",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"runtimeState": "Started",
+				"pipelines": [
+					{
+						"pipelineReference": {
+							"referenceName": "Banking_Master_Orchestrator",
+							"type": "PipelineReference"
+						},
+						"parameters": {}
+					}
+				],
+				"type": "ScheduleTrigger",
+				"typeProperties": {
+					"recurrence": {
+						"frequency": "Day",
+						"interval": 1,
+						"startTime": "2026-09-05T23:53:00",
+						"endTime": "2026-09-25T23:53:00",
+						"timeZone": "India Standard Time"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/Banking_Master_Orchestrator')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/SHIR-Banking-OnPrem')]",
+			"type": "Microsoft.DataFactory/factories/integrationRuntimes",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "SelfHosted",
+				"description": "SHIR gateway to access local Banking SQL Server",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		}
+	]
+}

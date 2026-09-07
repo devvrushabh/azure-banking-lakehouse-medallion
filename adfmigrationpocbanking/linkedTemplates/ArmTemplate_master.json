@@ -1,0 +1,98 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "adfmigrationpocbanking"
+		},
+		"LS_ADLS_Gen2_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'LS_ADLS_Gen2'"
+		},
+		"LS_AzureDatabricks_accessToken": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accessToken' of 'LS_AzureDatabricks'"
+		},
+		"LS_SQLServer_OnPrem_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'LS_SQLServer_OnPrem'"
+		},
+		"LS_ADLS_Gen2_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://adlsbankingpoc2026.dfs.core.windows.net/"
+		},
+		"LS_AzureDatabricks_properties_typeProperties_existingClusterId": {
+			"type": "string",
+			"defaultValue": "0904-221259-whpvru6z"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "VRUSHABH\\SQLEXPRESS"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "Banking"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "adf_user"
+		},
+		"containerUri": {
+			"type": "string",
+			"metadata": "URI to storage account containing linked ARM templates"
+		},
+		"containerSasToken": {
+			"type": "string",
+			"metadata": "Sas token to storage account containing linked ARM templates"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "adfmigrationpocbanking_ArmTemplate_0",
+			"type": "Microsoft.Resources/deployments",
+			"apiVersion": "2024-03-01",
+			"properties": {
+				"mode": "incremental",
+				"templateLink": {
+					"uri": "[concat(parameters('containerUri'), '/ArmTemplate_0.json', parameters('containerSasToken'))]",
+					"contentVersion": "1.0.0.0"
+				},
+				"parameters": {
+					"factoryName": {
+						"value": "[parameters('factoryName')]"
+					},
+					"LS_ADLS_Gen2_accountKey": {
+						"value": "[parameters('LS_ADLS_Gen2_accountKey')]"
+					},
+					"LS_AzureDatabricks_accessToken": {
+						"value": "[parameters('LS_AzureDatabricks_accessToken')]"
+					},
+					"LS_SQLServer_OnPrem_password": {
+						"value": "[parameters('LS_SQLServer_OnPrem_password')]"
+					},
+					"LS_ADLS_Gen2_properties_typeProperties_url": {
+						"value": "[parameters('LS_ADLS_Gen2_properties_typeProperties_url')]"
+					},
+					"LS_AzureDatabricks_properties_typeProperties_existingClusterId": {
+						"value": "[parameters('LS_AzureDatabricks_properties_typeProperties_existingClusterId')]"
+					},
+					"LS_SQLServer_OnPrem_properties_typeProperties_server": {
+						"value": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_server')]"
+					},
+					"LS_SQLServer_OnPrem_properties_typeProperties_database": {
+						"value": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_database')]"
+					},
+					"LS_SQLServer_OnPrem_properties_typeProperties_userName": {
+						"value": "[parameters('LS_SQLServer_OnPrem_properties_typeProperties_userName')]"
+					}
+				}
+			},
+			"dependsOn": []
+		}
+	]
+}

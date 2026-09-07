@@ -1,0 +1,33 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "adfmigrationpocbanking"
+		},
+		"LS_ADLS_Gen2_accountKey": {
+			"value": ""
+		},
+		"LS_AzureDatabricks_accessToken": {
+			"value": ""
+		},
+		"LS_SQLServer_OnPrem_password": {
+			"value": ""
+		},
+		"LS_ADLS_Gen2_properties_typeProperties_url": {
+			"value": "https://adlsbankingpoc2026.dfs.core.windows.net/"
+		},
+		"LS_AzureDatabricks_properties_typeProperties_existingClusterId": {
+			"value": "0904-221259-whpvru6z"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_server": {
+			"value": "VRUSHABH\\SQLEXPRESS"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_database": {
+			"value": "Banking"
+		},
+		"LS_SQLServer_OnPrem_properties_typeProperties_userName": {
+			"value": "adf_user"
+		}
+	}
+}
